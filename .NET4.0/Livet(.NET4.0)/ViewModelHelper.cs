@@ -32,16 +32,17 @@ namespace Livet
 
             var initCollection = new ObservableCollection<TViewModel>();
             var internalLock = new object();
-            Monitor.Enter(internalLock);
+            lock (internalLock)
+            {
 
-            var target = new DispatcherCollection<TViewModel>(initCollection, dispatcher);
-            var result = new ReadOnlyDispatcherCollection<TViewModel>(target);
+                var target = new DispatcherCollection<TViewModel>(initCollection, dispatcher);
+                var result = new ReadOnlyDispatcherCollection<TViewModel>(target);
 
-            var collectionChangedListener = new CollectionChangedEventListener(sourceAsNotifyCollection);
+                var collectionChangedListener = new CollectionChangedEventListener(sourceAsNotifyCollection);
 
-            result.EventListeners.Add(collectionChangedListener);
+                result.EventListeners.Add(collectionChangedListener);
 
-            collectionChangedListener.RegisterHandler((sender, e) =>
+                collectionChangedListener.RegisterHandler((sender, e) =>
                 {
                     lock (internalLock)
                     {
@@ -84,12 +85,12 @@ namespace Livet
                     }
                 });
 
-            foreach (var model in source)
-            {
-                initCollection.Add(converter(model));
+                foreach (var model in source)
+                {
+                    initCollection.Add(converter(model));
+                }
+                return result;
             }
-            Monitor.Exit(internalLock);
-            return result;
         }
     }
 }
