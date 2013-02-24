@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Collections.Specialized;
 using System.Collections.Concurrent;
@@ -8,12 +10,9 @@ namespace Livet.EventListeners
     /// <summary>
     /// INotifyCollectionChanged.NotifyCollectionChangedを受信するためのイベントリスナです。
     /// </summary>
-    public class CollectionChangedEventListener : EventListener<NotifyCollectionChangedEventHandler>
+    public sealed class CollectionChangedEventListener : EventListener<NotifyCollectionChangedEventHandler>, IEnumerable<KeyValuePair<NotifyCollectionChangedAction, ConcurrentBag<NotifyCollectionChangedEventHandler>>>
     {
-        private ConcurrentDictionary<NotifyCollectionChangedAction, ConcurrentBag<NotifyCollectionChangedEventHandler>> _handlerDictionary = new ConcurrentDictionary<NotifyCollectionChangedAction, ConcurrentBag<NotifyCollectionChangedEventHandler>>();
-        private WeakReference<INotifyCollectionChanged> _source;
-
-        private ConcurrentBag<NotifyCollectionChangedEventHandler> _allHandlerList = new ConcurrentBag<NotifyCollectionChangedEventHandler>();
+        private AnonymousCollectionChangedEventHandlerBag _bag;
 
         /// <summary>
         /// コンストラクタ
@@ -21,9 +20,8 @@ namespace Livet.EventListeners
         /// <param name="source">INotifyCollectionChangedオブジェクト</param>
         public CollectionChangedEventListener(INotifyCollectionChanged source)
         {
-            if (source == null) throw new ArgumentNullException("source");
-            _source = new WeakReference<INotifyCollectionChanged>(source);
-            Initialize(h => source.CollectionChanged += h, h => source.CollectionChanged -= h, (sender, e) => ExecuteHandler(e));
+            _bag = new AnonymousCollectionChangedEventHandlerBag(source);
+            Initialize(h => source.CollectionChanged += h, h => source.CollectionChanged -= h, (sender, e) => _bag.ExecuteHandler(e));
         }
 
         /// <summary>
@@ -32,10 +30,9 @@ namespace Livet.EventListeners
         /// <param name="source">INotifyCollectionChangedオブジェクト</param>
         /// <param name="handler">NotifyCollectionChangedイベントハンドラ</param>
         public CollectionChangedEventListener(INotifyCollectionChanged source, NotifyCollectionChangedEventHandler handler)
-            :this(source)
         {
-            if (handler == null) throw new ArgumentNullException("handler");
-            RegisterHandler(handler);
+            _bag = new AnonymousCollectionChangedEventHandlerBag(source,handler);
+            Initialize(h => source.CollectionChanged += h, h => source.CollectionChanged -= h, (sender, e) => _bag.ExecuteHandler(e));
         }
 
         /// <summary>
@@ -45,7 +42,7 @@ namespace Livet.EventListeners
         public void RegisterHandler(NotifyCollectionChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-            _allHandlerList.Add(handler);
+            _bag.RegisterHandler(handler);
         }
 
         /// <summary>
@@ -56,33 +53,40 @@ namespace Livet.EventListeners
         public void RegisterHandler(NotifyCollectionChangedAction action, NotifyCollectionChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-            _handlerDictionary.GetOrAdd(action, _ => new ConcurrentBag<NotifyCollectionChangedEventHandler>()).Add(handler);
+            _bag.RegisterHandler(action,handler);
         }
 
-        private void ExecuteHandler(NotifyCollectionChangedEventArgs e)
+        IEnumerator<KeyValuePair<NotifyCollectionChangedAction, ConcurrentBag<NotifyCollectionChangedEventHandler>>> IEnumerable<KeyValuePair<NotifyCollectionChangedAction, ConcurrentBag<NotifyCollectionChangedEventHandler>>>.GetEnumerator()
         {
-            INotifyCollectionChanged sourceResult;
-            var result = _source.TryGetTarget(out sourceResult);
+            return
+                ((
+                 IEnumerable
+                     <KeyValuePair<NotifyCollectionChangedAction, ConcurrentBag<NotifyCollectionChangedEventHandler>>>)
+                 _bag).GetEnumerator();
+        }
 
-            if (!result) return;
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return ((
+                 IEnumerable
+                     <KeyValuePair<NotifyCollectionChangedAction, ConcurrentBag<NotifyCollectionChangedEventHandler>>>)
+                 _bag).GetEnumerator();
+        }
 
-            ConcurrentBag<NotifyCollectionChangedEventHandler> list;
-            _handlerDictionary.TryGetValue(e.Action, out list);
-            if(list != null)
-            {
-                foreach (var handler in list)
-                {
-                    handler(sourceResult, e);
-                }
-            }
+        public void Add(NotifyCollectionChangedEventHandler handler)
+        {
+            _bag.Add(handler);
+        }
 
-            if (_allHandlerList.Any())
-            {
-                foreach (var handler in _allHandlerList)
-                {
-                    handler(sourceResult, e);
-                }
-            }
+        public void Add(NotifyCollectionChangedAction action, NotifyCollectionChangedEventHandler handler)
+        {
+            _bag.Add(action,handler);
+        }
+
+
+        public void Add(NotifyCollectionChangedAction action, params NotifyCollectionChangedEventHandler[] handlers)
+        {
+            _bag.Add(action,handlers);
         }
     }
 }

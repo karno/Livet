@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Collections.Concurrent;
@@ -11,8 +12,7 @@ namespace Livet.EventListeners
     /// </summary>
     public sealed class PropertyChangedEventListener : EventListener<PropertyChangedEventHandler>,IEnumerable<KeyValuePair<string,ConcurrentBag<PropertyChangedEventHandler>>>
     {
-        private ConcurrentDictionary<string, ConcurrentBag<PropertyChangedEventHandler>> _handlerDictionary = new ConcurrentDictionary<string, ConcurrentBag<PropertyChangedEventHandler>>();
-        private WeakReference<INotifyPropertyChanged> _source;
+        private AnonymousPropertyChangedEventHandlerBag _bag;
 
         /// <summary>
         /// コンストラクタ
@@ -20,11 +20,8 @@ namespace Livet.EventListeners
         /// <param name="source">INotifyPropertyChangedオブジェクト</param>
         public PropertyChangedEventListener(INotifyPropertyChanged source)
         {
-            if (source == null) throw new ArgumentNullException("source");
-
-            _source = new WeakReference<INotifyPropertyChanged>(source);
-
-            Initialize(h => source.PropertyChanged += h, h => source.PropertyChanged -= h, (sender, e) => ExecuteHandler(e));
+            _bag = new AnonymousPropertyChangedEventHandlerBag(source);
+            Initialize(h => source.PropertyChanged += h, h => source.PropertyChanged -= h, (sender, e) => _bag.ExecuteHandler(e));
         }
 
         /// <summary>
@@ -33,10 +30,9 @@ namespace Livet.EventListeners
         /// <param name="source">INotifyPropertyChangedオブジェクト</param>
         /// <param name="handler">PropertyChangedイベントハンドラ</param>
         public PropertyChangedEventListener(INotifyPropertyChanged source, PropertyChangedEventHandler handler)
-            :this(source)
         {
-            if (handler == null) throw new ArgumentNullException("handler");
-            RegisterHandler(handler);
+           _bag = new AnonymousPropertyChangedEventHandlerBag(source,handler);
+           Initialize(h => source.PropertyChanged += h, h => source.PropertyChanged -= h, (sender, e) => _bag.ExecuteHandler(e));
         }
 
         /// <summary>
@@ -46,7 +42,7 @@ namespace Livet.EventListeners
         public void RegisterHandler(PropertyChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-            _handlerDictionary.GetOrAdd(string.Empty, _ => new ConcurrentBag<PropertyChangedEventHandler>()).Add(handler);
+            _bag.RegisterHandler(handler);
         }
 
         /// <summary>
@@ -57,7 +53,7 @@ namespace Livet.EventListeners
         public void RegisterHandler(string propertyName, PropertyChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-            _handlerDictionary.GetOrAdd(propertyName, _ => new ConcurrentBag<PropertyChangedEventHandler>()).Add(handler);
+            _bag.RegisterHandler(propertyName,handler);
         }
 
         /// <summary>
@@ -68,107 +64,53 @@ namespace Livet.EventListeners
         public void RegisterHandler<T>(Expression<Func<T>> propertyExpression, PropertyChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-
-            if (propertyExpression == null) throw new ArgumentNullException("propertyExpression");
-
-            if (!(propertyExpression.Body is MemberExpression)) throw new NotSupportedException("このメソッドでは ()=>プロパティ の形式のラムダ式以外許可されません");
-
-            var memberExpression = (MemberExpression)propertyExpression.Body;
-
-            RegisterHandler(memberExpression.Member.Name, handler);
-        }
-
-        private void ExecuteHandler(PropertyChangedEventArgs e)
-        {
-            INotifyPropertyChanged sourceResult;
-            var result = _source.TryGetTarget(out sourceResult);
-
-            if (!result) return;
-
-            if(e.PropertyName != null)
-            {
-                ConcurrentBag<PropertyChangedEventHandler> list;
-                _handlerDictionary.TryGetValue(e.PropertyName, out list);
-
-                if(list != null)
-                {
-                    foreach (var handler in list)
-                    {
-                        handler(sourceResult, e);
-                    }
-                }
-            }
-
-            ConcurrentBag<PropertyChangedEventHandler> allList;
-            _handlerDictionary.TryGetValue(string.Empty, out allList);
-            if(allList != null)
-            {
-                foreach (var handler in allList)
-                {
-                    handler(sourceResult, e);
-                }
-            }
+            _bag.RegisterHandler(propertyExpression,handler);
         }
 
         IEnumerator<KeyValuePair<string, ConcurrentBag<PropertyChangedEventHandler>>> IEnumerable<KeyValuePair<string, ConcurrentBag<PropertyChangedEventHandler>>>.GetEnumerator()
         {
             ThrowExceptionIfDisposed();
-            return _handlerDictionary.GetEnumerator();
+            return
+                ((IEnumerable<KeyValuePair<string, ConcurrentBag<PropertyChangedEventHandler>>>) _bag)
+                    .GetEnumerator();
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
         {
             ThrowExceptionIfDisposed();
-            return _handlerDictionary.GetEnumerator();
+            return ((IEnumerable<KeyValuePair<string, ConcurrentBag<PropertyChangedEventHandler>>>)_bag).GetEnumerator();
         }
 
         public void Add(PropertyChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-            RegisterHandler(handler);
+            _bag.Add(handler);
         }
 
         public void Add(string propertyName, PropertyChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-            RegisterHandler(propertyName, handler);
+            _bag.Add(propertyName,handler);
         }
 
 
         public void Add(string propertyName, params PropertyChangedEventHandler[] handlers)
         {
             ThrowExceptionIfDisposed();
-            foreach (var handler in handlers)
-            {
-                RegisterHandler(propertyName, handler);
-            }
+            _bag.Add(propertyName,handlers);
         }
 
         public void Add<T>(Expression<Func<T>> propertyExpression, PropertyChangedEventHandler handler)
         {
             ThrowExceptionIfDisposed();
-
-            if (propertyExpression == null) throw new ArgumentNullException("propertyExpression");
-
-            if (!(propertyExpression.Body is MemberExpression)) throw new NotSupportedException("このメソッドでは ()=>プロパティ の形式のラムダ式以外許可されません");
-
-            var memberExpression = (MemberExpression)propertyExpression.Body;
-
-            Add(memberExpression.Member.Name, handler);
+            _bag.Add(propertyExpression,handler);
         }
 
 
         public void Add<T>(Expression<Func<T>> propertyExpression, params PropertyChangedEventHandler[] handlers)
         {
             ThrowExceptionIfDisposed();
-
-            if (propertyExpression == null) throw new ArgumentNullException("propertyExpression");
-
-            if (!(propertyExpression.Body is MemberExpression)) throw new NotSupportedException("このメソッドでは ()=>プロパティ の形式のラムダ式以外許可されません");
-
-            var memberExpression = (MemberExpression)propertyExpression.Body;
-
-            Add(memberExpression.Member.Name, handlers);
+            _bag.Add(propertyExpression,handlers);
         }
     }
 

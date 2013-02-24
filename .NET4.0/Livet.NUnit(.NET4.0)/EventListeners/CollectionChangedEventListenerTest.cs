@@ -131,6 +131,76 @@ namespace Livet.NUnit.EventListeners
         }
 
         [Test()]
+        public void AddHandlerKindTest()
+        {
+            var handler1Called = false;
+            var handler2Called = false;
+            var handler3Called = false;
+            var handler4Called = false;
+            var handler5Called = false;
+
+            var publisher = new TestEventPublisher();
+            var listener1 = new CollectionChangedEventListener(publisher)
+            {
+                {NotifyCollectionChangedAction.Add, (sender, e) => { e.Action.Is(NotifyCollectionChangedAction.Add); handler1Called = true; }},
+                {NotifyCollectionChangedAction.Remove, 
+                        (sender, e) => { e.Action.Is(NotifyCollectionChangedAction.Remove); handler2Called = true;},
+                        (sender, e) => { e.Action.Is(NotifyCollectionChangedAction.Remove); handler3Called = true;}
+                },
+                (sender,e) => handler4Called = true,
+                {NotifyCollectionChangedAction.Add, (sender, e) => { e.Action.Is(NotifyCollectionChangedAction.Add); handler5Called = true; }}
+            };
+
+            publisher.RaiseCollectionChanged(NotifyCollectionChangedAction.Reset,null);
+
+            handler1Called.Is(false);
+            handler2Called.Is(false);
+            handler3Called.Is(false);
+            handler4Called.Is(true);
+            handler5Called.Is(false);
+
+            handler4Called = false;
+
+            publisher.RaiseCollectionChanged(NotifyCollectionChangedAction.Add, null);
+
+            handler1Called.Is(true);
+            handler2Called.Is(false);
+            handler3Called.Is(false);
+            handler4Called.Is(true);
+            handler5Called.Is(true);
+
+            handler1Called = false;
+            handler4Called = false;
+            handler5Called = false;
+
+            publisher.RaiseCollectionChanged(NotifyCollectionChangedAction.Remove, null);
+
+            handler1Called.Is(false);
+            handler2Called.Is(true);
+            handler3Called.Is(true);
+            handler4Called.Is(true);
+            handler5Called.Is(false);
+
+            handler1Called = false;
+            handler2Called = false;
+            handler3Called = false;
+            handler4Called = false;
+            handler5Called = false;
+
+            listener1.Dispose();
+
+            publisher.RaiseCollectionChanged(NotifyCollectionChangedAction.Add, null);
+            publisher.RaiseCollectionChanged(NotifyCollectionChangedAction.Remove, null);
+
+            handler1Called.Is(false);
+            handler2Called.Is(false);
+            handler3Called.Is(false);
+            handler4Called.Is(false);
+            handler5Called.Is(false);
+
+        }
+
+        [Test()]
         public void MultiThreadHandlerTest()
         {
             var publisher = new TestEventPublisher();
@@ -187,7 +257,7 @@ namespace Livet.NUnit.EventListeners
             publisherStrongReference.RaiseCollectionChanged(NotifyCollectionChangedAction.Add, null);
 
             handler1Success.Is(true);
-
+            listener.Dispose();
             publisherStrongReference = null;
 
             GC.Collect();
