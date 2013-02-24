@@ -35,6 +35,7 @@ namespace Livet.EventListeners
         protected void Initialize(Action<THandler> add, Action<THandler> remove, THandler handler)
         {
             if (_initialized) return;
+            _initialized = true;
 
             if (add == null) throw new ArgumentNullException("add");
             if (remove == null) throw new ArgumentNullException("remove");
